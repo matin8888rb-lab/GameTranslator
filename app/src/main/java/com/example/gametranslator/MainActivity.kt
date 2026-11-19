@@ -23,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var font: Typeface
     private lateinit var aiSwitch: Switch
     private lateinit var keyField: EditText
+    private lateinit var groqKeyField: EditText
     private lateinit var modelField: EditText
     private lateinit var gameField: EditText
     private lateinit var glossaryField: EditText
@@ -134,15 +135,16 @@ class MainActivity : Activity() {
 
         // AI
         aiSwitch = Switch(this).apply {
-            text = "ترجمه با هوش مصنوعی (Gemini)"
+            text = "ترجمه هوشمند (Gemini + Groq)"
             setTextColor(cText)
             typeface = font
             isChecked = prefs.getBoolean("ai", false)
         }
-        keyField = inputField("کلید API جمینی", prefs.getString("key", "") ?: "", secret = true)
+        keyField = inputField("کلید API جمینی (موتور اصلی)", prefs.getString("key", "") ?: "", secret = true)
+        groqKeyField = inputField("کلید API گروک (پشتیبان اختیاری)", prefs.getString("groq_key", "") ?: "", secret = true)
         modelField = inputField("نام مدل", prefs.getString("model", "gemini-2.5-flash") ?: "gemini-2.5-flash")
         gameField = inputField("اسم بازی (برای ترجمه‌ی بهتر)", prefs.getString("game", "Genshin Impact") ?: "")
-        root.addView(card("هوش مصنوعی", aiSwitch, keyField, modelField, gameField))
+        root.addView(card("هوش مصنوعی", aiSwitch, keyField, groqKeyField, modelField, gameField))
         root.addView(gap())
 
         // look of translated text
@@ -219,6 +221,7 @@ class MainActivity : Activity() {
         getSharedPreferences("cfg", Context.MODE_PRIVATE).edit()
             .putBoolean("ai", aiSwitch.isChecked)
             .putString("key", keyField.text.toString().trim())
+            .putString("groq_key", groqKeyField.text.toString().trim())
             .putString("model", modelField.text.toString().trim().ifEmpty { "gemini-2.5-flash" })
             .putString("game", gameField.text.toString().trim())
             .putString("glossary", glossaryField.text.toString())
