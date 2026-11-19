@@ -266,6 +266,45 @@ class OverlayService : Service() {
         return bg to fg
     }
 
+    // ---------- AI provider fallback ----------
+    private fun translateWithFallback(
+        texts: List<String>,
+        prefs: android.content.SharedPreferences,
+        game: String,
+        glossary: List<Pair<String, String>>,
+        previous: List<String>? = null,
+        context: List<String> = emptyList()
+    ): List<String> {
+        if (!prefs.getBoolean("ai", false)) return Translator.mlkit(texts)
+
+        val geminiKey = prefs.getString("key", "") ?: ""
+        val groqKey = prefs.getString("groq_key", "") ?: ""
+        var aiFailed = false
+
+        if (geminiKey.isNotBlank()) {
+            try {
+                return Translator.gemini(
+                    texts, geminiKey, prefs.getString("model", "gemini-2.5-flash") ?: "gemini-2.5-flash",
+                    game, glossary, previous, context
+                )
+            } catch (_: Exception) {
+                aiFailed = true
+            }
+        }
+
+        if (groqKey.isNotBlank()) {
+            try {
+                return GroqTranslator.translate(texts, groqKey, game, glossary, previous, context)
+            } catch (_: Exception) {
+                aiFailed = true
+            }
+        }
+
+        if (aiFailed) toast("موتورهای آنلاین در دسترس نبودند؛ ترجمه‌ی آفلاین فعال شد")
+        else toast("برای ترجمه‌ی هوشمند، کلید Gemini یا Groq را وارد کن")
+        return Translator.mlkit(texts)
+    }
+
     // ---------- OCR + translate ----------
     private fun process() {
         try {
@@ -288,15 +327,7 @@ class OverlayService : Service() {
             val texts = items.map { it.text }
             val glossary = Translator.parseGlossary(prefs.getString("glossary", "") ?: "")
             val game = prefs.getString("game", "") ?: ""
-            val raw = try {
-                val key = prefs.getString("key", "") ?: ""
-                if (prefs.getBoolean("ai", false) && key.isNotBlank())
-                    Translator.gemini(texts, key, prefs.getString("model", "gemini-2.5-flash")!!, game, glossary)
-                else Translator.mlkit(texts)
-            } catch (e: Exception) {
-                toast("هوش مصنوعی جواب نداد، با ترجمه‌ی آفلاین ادامه می‌دم")
-                Translator.mlkit(texts)
-            }
+            val raw = translateWithFallback(texts, prefs, game, glossary)
             val translated = Translator.applyGlossary(texts, raw, glossary)
             currentTexts = texts
             main.post { showResults(items, translated) }
@@ -369,21 +400,21 @@ class OverlayService : Service() {
     /** Tap on a translated block → ask the AI for a better translation of just that block. */
     private fun fixTranslation(item: Item, tv: TextView) {
         val prefs = getSharedPreferences("cfg", Context.MODE_PRIVATE)
-        val key = prefs.getString("key", "") ?: ""
-        if (key.isBlank()) {
-            toast("برای اصلاح ترجمه، کلید API جمینی رو توی برنامه وارد کن")
+        val geminiKey = prefs.getString("key", "") ?: ""
+        val groqKey = prefs.getString("groq_key", "") ?: ""
+        if (geminiKey.isBlank() && groqKey.isBlank()) {
+            toast("برای اصلاح هوشمند، کلید Gemini یا Groq را وارد کن")
             return
         }
         val old = tv.text.toString()
         tv.text = "…"
         val glossary = Translator.parseGlossary(prefs.getString("glossary", "") ?: "")
         val game = prefs.getString("game", "") ?: ""
-        val model = prefs.getString("model", "gemini-2.5-flash")!!
         val ctx = currentTexts.filter { it != item.text }
         worker.execute {
             try {
-                val better = Translator.gemini(
-                    listOf(item.text), key, model, game, glossary,
+                val better = translateWithFallback(
+                    listOf(item.text), prefs, game, glossary,
                     previous = listOf(old), context = ctx
                 )
                 main.post { tv.text = better[0] }
